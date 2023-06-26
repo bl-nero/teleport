@@ -22,6 +22,7 @@ import { requiredField } from 'shared/components/Validation/rules';
 import { RoleProps, TeamOptionsStrings, TitleOptionsStrings } from './types';
 import { teamSelectOptions, titleSelectOptions } from './constants';
 
+// todo mberg design decision on free form field
 export const Role = ({ team, role, updateFields }: RoleProps) => (
   <>
     <FieldSelect
