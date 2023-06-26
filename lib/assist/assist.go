@@ -209,7 +209,7 @@ func (c *Chat) ProcessComplete(ctx context.Context,
 
 				payload, err := json.Marshal(update)
 				if err != nil {
-					log.WithError(err).Debug("Failed to marshal progress update: %v", update)
+					log.WithError(err).Debugf("Failed to marshal progress update: %v", update)
 					continue
 				}
 
