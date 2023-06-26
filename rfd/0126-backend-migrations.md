@@ -28,6 +28,60 @@ difficult and prevents skipping any major versions when upgrading since there ar
 will include all the migrations between versions. This also prevents Auth from serving any requests until after all
 migrations have been completed which causes downtime for a cluster.
 
+## Details
+
+### Migrations
+
+Not every backend resource change must be accompanied by a traditional migration that runs during Auth initialization.
+Small additive changes, or converting one field to another may handle the migration lazily on read and write. Larger
+scale changes that alter the shape of the resource like converting a resource to one or many other resources, converting
+a field to a repeated value, or changing how the resource is encoded in the backend should include a direct migration.
+
+### Migrating Keys
+
+All migrations associated with a breaking change MUST not be performed in place, instead these migrations MUST migrate
+both the keys and values in the backend. For example, to migrate the data stored in key `some/path/to/resource/<ID>` we
+must leave the original value at `some/path/to/resource/<ID>` as is and write the migrated value to
+`some/new/path/to/resource/<ID>`. This allows older versions of Teleport to still operate on
+`some/path/to/resource/<ID>`, while newer versions can first attempt reads from `some/new/path/to/resource/<ID>`, and
+fall back to reading from `some/path/to/resource/<ID>` if the migrated key does not exist yet.
+
+Moving data to a new key range and deleting the data from the original key range in the same migration will prevent
+downgrades unless an explicit step is taken to undo the migration. To avoid this scenario a migration may be split into
+two, one that migrates the data to a new key range in and one that deletes the old key range; however the two migrations
+should not exist in the same release. Continuing from the example above, if `some/path/to/resource/<ID>` is migrated to
+`some/new/path/to/resource/<ID>` in v1.0.0 a follow-up migration should be added in v2.0.0 to delete the keys under
+`some/path/to/resource` that were migrated in v1.0.0.
+
+Keys should be versioned to determine which version of a resource exists at any given key range. A key prefix of
+`/type/version/subkind/name` should be used where possible to have uniformity. For example if nodes were migrated from
+`/nodes/default/<UUID>` it should be to `/nodes/v2/default/<UUID>`.
+
+### Persistent Migrations
+
+All new direct migrations MUST exist in perpetuity to allow for the correct migrations to be applied regardless of which
+version of Teleport is being upgraded from and to. Migrations MUST be numbered and applied in sequence. The order of
+migrations MUST not change and a migration MUST not be altered once it has been included in a release.
+
+To make tracking and discovering migrations easier all migrations MUST be placed in `lib/auth/migrations`. Each
+migration should be named `$number-migration-description.go` and contain a single migration. The following is an example
+of four migrations:
+
+```
+./lib/auth/migrations/
+├── 0001-initial_migration.go
+├── 0002-another_migration.go
+├── 0003-some_other_migration.go
+└── 0004-yet_another_migration.go
+```
+
+Migration history is to be stored in the backend to enable tracking which migrations have been applied, when, and
+whether they were successful or not. The key `/migrations/<migration_number>` will store the history of a migration.
+
+Cluster admins may view the migration history via `tctl migrations ls`.
+
+### Option 1: Stricter Resource Versioning
+
 Without a more concrete strategy for resource versioning, it is impossible to have different versions of Auth running
 concurrently. Auth needs to be aware of the exact version of a resource that clients are requesting to determine if the
 version of said resource stored in the backend is at the same version, if the stored version is capable of being
@@ -47,12 +101,10 @@ We need to ensure that:
 4. Migrations are always applied in the correct order and are not skipped.
 5. Migrations can be rolled back without having to manually edit the backend.
 
-## Details
-
-### Resource versioning
+#### Resource versioning
 
 The version of a resource MUST be bumped when changes are made to it. Any changes to a resource which can be converted
-into the previous version and do not cause any backward compatability issues with older Teleport instances only need to
+into the previous version and do not cause any backward compatibility issues with older Teleport instances only need to
 bump the minor version of a resource. All changes to a resource which would cause backward incompatibility with other
 Auth servers trying to read/write the resource MUST update the major version. All changes to a resource which alter how
 that resource is understood, interpreted, and acted upon by Teleport instances MUST update the major version.
@@ -126,7 +178,7 @@ scenarios in which the resource version may vary along a request route and what 
 | v1.1                              | v1.2            | v1.1         | v1.2           | \*    | ERR (auth never writes a version it doesn't understand)         |
 | \*                                | v1.1+downgraded | \*           | \*             | no    | ERR (always refuse to write \*+downgraded)                      |
 | \*                                | v1.1+downgraded | v1.1         | \*             | yes   | OK (written as v1.1, metadata stripped)                         |
-| \*                                | v1.1+downgraded | v1.0         | \*             | yes   | ERR (awlays refuse to write unknown version, even with --force) |
+| \*                                | v1.1+downgraded | v1.0         | \*             | yes   | ERR (always refuse to write unknown version, even with --force) |
 | /key1/v1.1+downgraded && /key2/v2 | \*              | v1.1         | \*             | no    | ERR (always refuse to write \*+downgraded)                      |
 | /key1/v1.1+downgraded && /key2/v2 | \*              | v1.1         | \*             | yes   | OK (written as v1.1, metadata stripped, /key2 is unmodified)    |
 | /key1/v1.1+downgraded && /key2/v2 | v1              | v2           | \*             | \*    | OK (written to both /keyv1/v1.1+downgraded, and /key/v2)        |
@@ -164,7 +216,7 @@ scenarios in which the resource version may vary along a request route and what 
 
 </details>
 
-### Optimistic Locking
+#### Optimistic Locking
 
 The backend will be updated to support optimistic locking in order to prevent two simultaneous writes to a resource from
 overwriting one another. The resource metadata shall have a new `Revision` field that will include a backend specific
@@ -225,64 +277,16 @@ type Backend interface {
 
 </details>
 
-### When is a migration required?
+#### Migration Strategy
 
-Not every backend resource change must be accompanied by a migration. Small additive changes, or converting one field to
-another may handle the migration lazily on read and write. Larger scale changes that alter the shape of the resource
-like converting a resource to one or many other resources, converting a field to a repeated value, or changing how the
-resource is encoded in the backend should include a direct migration.
+In addition to migrating keys as outlined above, when a migration converts a resource at the new key, the corresponding
+resource at the old key must also have its version appended with `+downgraded`. For example converting a resource at
+v1.1 to v2 via a migration should update the old resource to now have a version of `v1.1+downgraded`. This is an
+indication to older Auth servers that the resource is now read only.
 
-### Persistent Migrations
+#### Implementation Details
 
-All new direct migrations MUST exist in perpetuity to allow for the correct migrations to be applied regardless of which
-version of Teleport is being upgraded from and to. Migrations MUST be numbered and applied in sequence. The order of
-migrations MUST not change and a migration MUST not be altered once it has been included in a release.
-
-To make tracking and discovering migrations easier all migrations MUST be placed in `lib/auth/migrations`. Each
-migration should be named `$number-migration-description.go` and contain a single migration. The following is an example
-of four migrations:
-
-```
-./lib/auth/migrations/
-├── 0001-initial_migration.go
-├── 0002-another_migration.go
-├── 0003-some_other_migration.go
-└── 0004-yet_another_migration.go
-```
-
-Migration history is to be stored in the backend to enable tracking which migrations have been applied, when, and
-whether they were successful or not. The key `/migrations/<migration_number>` will store the history of a migration.
-
-Cluster admins may view the migration history via `tctl migrations ls`.
-
-### Migration Strategy
-
-All migrations associated with a breaking change MUST not be performed in place, instead these migrations MUST migrate
-both the keys and values in the backend. For example, to migrate the data stored in key `some/path/to/resource/<ID>` we
-must leave the original value at `some/path/to/resource/<ID>` as is and write the migrated value to
-`some/new/path/to/resource/<ID>`. This allows older versions of Teleport to still operate on
-`some/path/to/resource/<ID>`, while newer versions can first attempt reads from `some/new/path/to/resource/<ID>`, and
-fall back to reading from `some/path/to/resource/<ID>` if the migrated key does not exist yet.
-
-Moving data to a new key range and deleting the data from the original key range in the same migration will prevent
-downgrades unless an explicit step is taken to undo the migration. To avoid this scenario a migration may be split into
-two, one that migrates the data to a new key range in and one that deletes the old key range; however the two migrations
-should not exist in the same release. Continuing from the example above, if `some/path/to/resource/<ID>` is migrated to
-`some/new/path/to/resource/<ID>` in v1.0.0 a follow-up migration should be added in v2.0.0 to delete the keys under
-`some/path/to/resource` that were migrated in v1.0.0.
-
-Keys should be versioned to determine which version of a resource exists at any given key range. A key prefix of
-`/type/version/subkind/name` should be used where possible to have uniformity. For example if nodes were migrated from
-`/nodes/default/<UUID>` it should be to `/nodes/v2/default/<UUID>`.
-
-When a migration converts a resource at the new key, the corresponding resource at the old key must also have its
-version appended with `+downgraded`. For example converting a resource at v1.1 to v2 via a migration should update the
-old resource to now have a version of `v1.1+downgraded`. This is an indication to older Auth servers that the resource
-is now read only.
-
-### Implementation Details
-
-#### Auth Initialization
+##### Auth Initialization
 
 Every time Auth starts it will evaluate all known migrations against the cluster migration history and apply any
 outstanding migrations. This will allow clusters to skip major versions when upgrading and still have the correct
@@ -305,7 +309,7 @@ migrations via `tctl migrations ls` to see any errors associated with a particul
 resolved through manual intervention `tctl migrations apply` can be invoked to kick off the migration process mentioned
 above.
 
-#### Migrations
+##### Migrations
 
 A new framework will be created to declare migrations, perform migrations in the correct order, and persist migration
 status. A migration must implement the following interface:
@@ -429,12 +433,68 @@ version is already exists then registration will fail.
     }
 ```
 
-#### Backend Services
+##### Backend Services
 
 The generic backend service will be extended to handle support for optimistic locking, performing version checking, and
 downgrading resources. This will reduce the burden on each custom backend service and ease the developer experience. To
 opt in to the new behavior a resources backend service just needs to ensure that it is using the
 `lib/services/generic.Service`.
+
+### Option 2: Phased Migrations
+
+We can separate a backend migration from any application logic that depends on it into two subsequent releases so that
+by the time the application logic is reading/writing to/from a migrated resource all versions of Auth will already have
+the same understanding of the resource. Smaller changes that can be lazily migrated on read/write can be achieved in a
+smaller number of steps than a larger change which requires a direct migration but both are still possible to achieve.
+
+<details open><summary>Lazy Migration Phases</summary>
+
+- v1: Make changes to resource
+- v2: Add application code that lazily migrates on read/write and uses default value where possible
+
+</details>
+
+<details open><summary>Direct Migration Phases</summary>
+
+- v1: Make changes to resource. Write: to both new and old resources. Read: old resource.
+- v2: Add a direct migration that copies all old resource to new resource. Write: to both new and old resources. Read:
+  new resource.
+- v3: Write: new resource. Read: old resource
+- v4: Add a direct migration that deletes all old resources. Write: new resource. Read: old resource
+
+</details>
+
+This approach is much better suited for Cloud where updates are within our control and can be applied much more
+frequently. Since we cannot guarantee that self hosted users always update in order, we can ensure that both the
+migration and the application logic land in the same major release and advise them to proceed with the legacy upgrade
+strategy of scaling down to a single auth server. Though, there may still be issues on Cloud if a tenant is held back
+from upgrading for a period of time and then wants to be on the latest version. In this scenario we can toggle the
+feature flag to disable rolling auth updates so that the legacy upgrade strategy is followed as well. There may be some
+additional down time in this scenario but it should be the exception and not the norm.
+
+The biggest shift with this approach will be in our developer experience. When implementing a new feature that requires
+a migration it is imperative to not include any application logic that relies on the new resource representation in the
+same Cloud release, but, they must exist in the same major version of self hosted releases.
+
+### Option 3: Deferred Migrations
+
+To prevent any migrations from impacting older versions of Teleport we can defer execution of migrations until all
+versions of Auth are running a version which understands the migration. Determining peer versions is not possible today,
+but could be done via monitoring Auth resources within Auth and waiting until all older versions disappear. Detection of
+old Auth servers may take some time and not be a reliable picture of the cluster if heartbeats are stale, or a new
+Auth server was only online long enough to heartbeat and then was terminated. Without an Auth peering mechanism
+detection of different Auth instances within a cluster may not be reliable.
+
+We could pursue a Cloud only variant of this strategy which relies on the Tenant Operator to signal to Auth when all
+older versions of Auth have been terminated. However, there is currently no control interface that allows Tenant
+Operator to communicate with Teleport Auth or Proxy. We could use signals, however, it would have to be a custom
+real-time signal since Teleport already consumes all of the standard signals for other purposes. To avoid putting
+pressure on kubernetes we should avoid anything that requires "kube exec" as this won't scale well.
+
+This strategy also does not prevent application logic from having to be aware of both the old and new resources since there
+is no guarantee that the migrations will be executed immediately. Any new features which rely on the new resource will either
+temporarily not function or need a compatibility mode to prevent the new application logic from kicking in until the migration
+has completed.
 
 ### Backward Compatibility
 
