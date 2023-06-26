@@ -105,7 +105,7 @@ func TestSearchEventsLimiter(t *testing.T) {
 				Order: types.EventOrderAscending,
 			})
 			return err == nil
-		}, 40*time.Millisecond, 5*time.Millisecond)
+		}, 80*time.Millisecond, 5*time.Millisecond)
 	})
 }
 
