@@ -111,8 +111,7 @@ func newAzureHandler(ctx context.Context, config HandlerConfig) (*handler, error
 		HandlerConfig: config,
 		tokenCache:    tokenCache,
 	}
-	// Explicitly passing false here to be clear that we always want the host
-	// header to be the same as the outbound request's URL host.
+
 	svc.fwd, err = reverseproxy.New(
 		reverseproxy.WithRoundTripper(config.RoundTripper),
 		reverseproxy.WithLogger(config.Log),

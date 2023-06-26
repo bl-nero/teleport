@@ -92,8 +92,7 @@ func NewAWSSignerHandler(ctx context.Context, config SignerHandlerConfig) (http.
 		SignerHandlerConfig: config,
 		closeContext:        ctx,
 	}
-	// Explicitly passing false here to be clear that we always want the host
-	// header to be the same as the outbound request's URL host.
+
 	var err error
 	handler.fwd, err = reverseproxy.New(
 		reverseproxy.WithRoundTripper(config.RoundTripper),
