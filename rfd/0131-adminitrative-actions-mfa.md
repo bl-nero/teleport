@@ -196,7 +196,7 @@ Cons:
 - Adding a new system of passing user credentials makes the client harder to
   reason about, especially for external users of the API client.
 
-1. Reissue short-lived (1 minute TTL) MFA verified TLS certificates.
+3. Reissue short-lived (1 minute TTL) MFA verified TLS certificates.
 
 This approach is similar to Per-session MFA. The client will need to issue a
 `GenerateUserSingleUseCerts` request to get MFA verified TLS certificates before
