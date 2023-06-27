@@ -23,6 +23,7 @@ import {
   DiscoverEvent,
   DiscoverEventResource,
   userEventService,
+  DiscoverServiceDeployMethod,
 } from 'teleport/services/userEvent';
 import cfg from 'teleport/config';
 
@@ -71,6 +72,7 @@ type CustomEventInput = {
   eventResourceName?: DiscoverEventResource;
   autoDiscoverResourcesCount?: number;
   selectedResourcesCount?: number;
+  serviceDeployedMethod?: DiscoverServiceDeployMethod;
 };
 
 type DiscoverProviderProps = {
@@ -121,13 +123,20 @@ export function DiscoverProvider({
     (status: DiscoverEventStepStatus, custom?: CustomEventInput) => {
       const { id, currEventName } = eventState;
 
+      const event = custom?.eventName || currEventName;
+      const isDeployEvent = event === DiscoverEvent.DeployService;
+      const deployedMethod =
+        custom?.serviceDeployedMethod ||
+        DiscoverServiceDeployMethod.Unspecified;
+
       userEventService.captureDiscoverEvent({
-        event: custom?.eventName || currEventName,
+        event,
         eventData: {
           id: id || custom.id,
           resource: custom?.eventResourceName || resourceSpec?.event,
           autoDiscoverResourcesCount: custom?.autoDiscoverResourcesCount,
           selectedResourcesCount: custom?.selectedResourcesCount,
+          serviceDeployedMethod: isDeployEvent ? deployedMethod : undefined,
           ...status,
         },
       });
@@ -388,7 +397,11 @@ export function DiscoverProvider({
         stepStatus: DiscoverEventStatus.Error,
         stepStatusError: errorStr,
       },
-      { autoDiscoverResourcesCount: 0, selectedResourcesCount: 0 }
+      {
+        autoDiscoverResourcesCount: 0,
+        selectedResourcesCount: 0,
+        serviceDeployedMethod: DiscoverServiceDeployMethod.Unspecified,
+      }
     );
   }
 
