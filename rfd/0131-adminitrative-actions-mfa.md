@@ -166,7 +166,7 @@ Cons:
   - This can potentially be avoided within the implementation by introducing
     a common gRPC message for the `MFAChallengeResponse`.
 
-1. Allow clients to pass `MFAChallengeResponse` as client request metadata.
+2. Allow clients to pass `MFAChallengeResponse` as client request metadata.
 
 This approach is similar to passing a bearer-token in HTTP requests. Note that it
 will augment the normal certificate auth flow, not replace it. Additionally, the
