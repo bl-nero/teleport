@@ -61,7 +61,7 @@ For example:
 - `tctl rm/create/edit`
 - `tctl users add/rm/reset`
 - Adding a node from the WebUI
-- Modifying a role form the WebUI
+- Modifying a role from the WebUI
 
 #### Usage Event Creation
 
