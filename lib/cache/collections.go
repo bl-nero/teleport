@@ -72,6 +72,9 @@ type executor[T types.Resource, R any] interface {
 	getReader(c *Cache, cacheOK bool) R
 }
 
+// noReader is returned by getReader for resources which aren't directly used by the cache, and therefore have no associated reader.
+type noReader struct{}
+
 // genericCollection is a generic collection implementation for resource type T with collection-specific logic
 // encapsulated in executor type E. Type R provides getter methods related to the collection, e.g. GetNodes(),
 // GetRoles().
@@ -395,8 +398,7 @@ func setupCollections(c *Cache, watches []types.WatchKind) (*cacheCollections, e
 			if c.DynamicAccess == nil {
 				return nil, trace.BadParameter("missing parameter DynamicAccess")
 			}
-			// access request resources aren't directly used by Cache so there's no associated reader type
-			collections.byKind[resourceKind] = &genericCollection[types.AccessRequest, any, accessRequestExecutor]{cache: c, watch: watch}
+			collections.byKind[resourceKind] = &genericCollection[types.AccessRequest, noReader, accessRequestExecutor]{cache: c, watch: watch}
 		case types.KindAppServer:
 			if c.Presence == nil {
 				return nil, trace.BadParameter("missing parameter Presence")
@@ -479,8 +481,7 @@ func setupCollections(c *Cache, watches []types.WatchKind) (*cacheCollections, e
 			if c.Presence == nil {
 				return nil, trace.BadParameter("missing parameter Presence")
 			}
-			// database service resources aren't directly used by Cache so there's no associated reader type
-			collections.byKind[resourceKind] = &genericCollection[types.DatabaseService, any, databaseServiceExecutor]{cache: c, watch: watch}
+			collections.byKind[resourceKind] = &genericCollection[types.DatabaseService, noReader, databaseServiceExecutor]{cache: c, watch: watch}
 		case types.KindApp:
 			if c.Apps == nil {
 				return nil, trace.BadParameter("missing parameter Apps")
@@ -590,8 +591,7 @@ func setupCollections(c *Cache, watches []types.WatchKind) (*cacheCollections, e
 			}
 			collections.byKind[resourceKind] = collections.integrations
 		case types.KindHeadlessAuthentication:
-			// headless authentication resources aren't directly used by Cache so there's no associated reader type
-			collections.byKind[resourceKind] = &genericCollection[*types.HeadlessAuthentication, any, headlessAuthenticationServiceExecutor]{cache: c, watch: watch}
+			collections.byKind[resourceKind] = &genericCollection[*types.HeadlessAuthentication, noReader, headlessAuthenticationServiceExecutor]{cache: c, watch: watch}
 		default:
 			return nil, trace.BadParameter("resource %q is not supported", watch.Kind)
 		}
@@ -661,12 +661,11 @@ func (accessRequestExecutor) delete(ctx context.Context, cache *Cache, resource 
 
 func (accessRequestExecutor) isSingleton() bool { return false }
 
-func (accessRequestExecutor) getReader(_ *Cache, _ bool) any {
-	// access request resources aren't directly used by Cache so there's no associated reader type
-	return nil
+func (accessRequestExecutor) getReader(_ *Cache, _ bool) noReader {
+	return noReader{}
 }
 
-var _ executor[types.AccessRequest, any] = accessRequestExecutor{}
+var _ executor[types.AccessRequest, noReader] = accessRequestExecutor{}
 
 type tunnelConnectionExecutor struct{}
 
@@ -1234,12 +1233,11 @@ func (databaseServiceExecutor) delete(ctx context.Context, cache *Cache, resourc
 
 func (databaseServiceExecutor) isSingleton() bool { return false }
 
-func (databaseServiceExecutor) getReader(_ *Cache, _ bool) any {
-	// database service resources aren't directly used by Cache so there's no associated reader
-	return nil
+func (databaseServiceExecutor) getReader(_ *Cache, _ bool) noReader {
+	return noReader{}
 }
 
-var _ executor[types.DatabaseService, any] = databaseServiceExecutor{}
+var _ executor[types.DatabaseService, noReader] = databaseServiceExecutor{}
 
 type databaseExecutor struct{}
 
@@ -2327,9 +2325,8 @@ func (headlessAuthenticationServiceExecutor) delete(ctx context.Context, cache *
 
 func (headlessAuthenticationServiceExecutor) isSingleton() bool { return false }
 
-func (headlessAuthenticationServiceExecutor) getReader(_ *Cache, _ bool) any {
-	// headless authentication resources aren't directly used by Cache so there's no associated reader type
-	return nil
+func (headlessAuthenticationServiceExecutor) getReader(_ *Cache, _ bool) noReader {
+	return noReader{}
 }
 
-var _ executor[*types.HeadlessAuthentication, any] = headlessAuthenticationServiceExecutor{}
+var _ executor[*types.HeadlessAuthentication, noReader] = headlessAuthenticationServiceExecutor{}
