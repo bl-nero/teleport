@@ -6286,10 +6286,45 @@ func (a *ServerWithRoles) UpdateHeadlessAuthenticationState(ctx context.Context,
 	return trace.Wrap(err)
 }
 
+// MaintainHeadlessAuthenticationStub maintains a headless authentication stub for the user.
+// Headless login processes will look for this stub before inserting the headless authentication
+// resource into the backend as a form of indirect authorization.
+func (a *ServerWithRoles) MaintainHeadlessAuthenticationStub(ctx context.Context) error {
+	// Create a stub and re-create it each time it expires.
+	if err := a.CreateHeadlessAuthenticationStub(ctx); err != nil {
+		return trace.Wrap(err)
+	}
+
+	ticker := time.NewTicker(defaults.CallbackTimeout)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := a.CreateHeadlessAuthenticationStub(ctx); err != nil {
+				return trace.Wrap(err)
+			}
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
 // WatchPendingHeadlessAuthentications exists to satisfy auth.ClientI but is not implemented here.
 // Use auth.GRPCServer.WatchPendingHeadlessAuthentications or client.Client.WatchPendingHeadlessAuthentications instead.
 func (a *ServerWithRoles) WatchPendingHeadlessAuthentications(ctx context.Context) (types.Watcher, error) {
-	return nil, trace.NotImplemented("bug: WatchPendingHeadlessAuthentications must not be called on auth.ServerWithRoles")
+	filter := types.HeadlessAuthenticationFilter{
+		Username: a.context.User.GetName(),
+		State:    types.HeadlessAuthenticationState_HEADLESS_AUTHENTICATION_STATE_PENDING,
+	}
+
+	return a.NewWatcher(ctx, types.Watch{
+		Name: a.context.User.GetName(),
+		Kinds: []types.WatchKind{{
+			Kind:   types.KindHeadlessAuthentication,
+			Filter: filter.IntoMap(),
+		}},
+	})
 }
 
 // CreateAssistantConversation creates a new conversation entry in the backend.

@@ -5211,38 +5211,21 @@ func (g *GRPCServer) WatchPendingHeadlessAuthentications(_ *emptypb.Empty, strea
 		return trace.Wrap(err)
 	}
 
-	filter := types.HeadlessAuthenticationFilter{
-		Username: auth.context.User.GetName(),
-		State:    types.HeadlessAuthenticationState_HEADLESS_AUTHENTICATION_STATE_PENDING,
-	}
-
-	watcher, err := auth.NewWatcher(stream.Context(), types.Watch{
-		Name: auth.User.GetName(),
-		Kinds: []types.WatchKind{{
-			Kind:   types.KindHeadlessAuthentication,
-			Filter: filter.IntoMap(),
-		}},
-	})
+	watcher, err := auth.WatchPendingHeadlessAuthentications(stream.Context())
 	if err != nil {
 		return trace.Wrap(err)
 	}
 	defer watcher.Close()
 
-	// The headless login process may be waiting for the user to create a stub to authorize the insert.
-	// Create a stub and re-create it each time it expires.
-	if err := auth.CreateHeadlessAuthenticationStub(stream.Context()); err != nil {
-		return trace.Wrap(err)
-	}
-
-	ticker := time.NewTicker(defaults.CallbackTimeout)
-	defer ticker.Stop()
+	stubErr := make(chan error)
+	go func() {
+		stubErr <- auth.MaintainHeadlessAuthenticationStub(stream.Context())
+	}()
 
 	for {
 		select {
-		case <-ticker.C:
-			if err := auth.CreateHeadlessAuthenticationStub(stream.Context()); err != nil {
-				return trace.Wrap(err)
-			}
+		case err := <-stubErr:
+			return trace.Wrap(err)
 		case <-stream.Context().Done():
 			return nil
 		case <-watcher.Done():
