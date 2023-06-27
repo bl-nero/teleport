@@ -244,7 +244,7 @@ error will be returned to the client.
 ```go
 // ErrAPIMFARequired is returned by AccessChecker when an API request
 // requires an MFA check.
-var ErrAPIMFARequired = trace.AccessDenied("API request requires MFA")
+var ErrAdminActionMFARequired = trace.AccessDenied("administrative action requires MFA")
 ```
 
 The client will check for this error to determine whether it should retry a
